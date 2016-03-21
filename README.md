@@ -20,12 +20,6 @@ Features that hopefully will be added in future:
 1. Screenshot
 2. Applications list
 
-Usage:
-
-```
-fuse_adb_fs <mountpoint>
-```
-
 Build:
 
 1. You'll need an [Haskell Platform](https://www.haskell.org/platform/) being installed.
