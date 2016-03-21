@@ -20,3 +20,35 @@ Features that hopefully will be added in future:
 1. Screenshot
 2. Applications list
 
+Usage:
+
+```
+fuse_adb_fs <mountpoint>
+```
+
+Build:
+
+1. You'll need an [Haskell Platform](https://www.haskell.org/platform/) being installed.
+2. Clone fuse_adb_fs repo
+3. In the repo root, execute:
+
+```
+cabal sandbox init
+cabal install
+cabal build
+```
+
+The built executable will be placed in dist/build/fuse-adb-fs
+
+Usage:
+
+```
+fuse-adb-fs <mountpoint>
+```
+
+Also, for debugging purposes, log file can be created:
+
+```
+fuse-adb-fs -f /tmp/adb_fs_log.txt <mountpoint>
+```
+
