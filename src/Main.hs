@@ -12,6 +12,8 @@ import qualified System.Environment as Env
 import Control.Monad (join, void)
 
 import System.Console.GetOpt
+import System.FilePath ((</>))
+import System.Directory (getCurrentDirectory)
 
 import Data.Maybe (isJust)
 import Data.List (find)
@@ -22,12 +24,14 @@ main :: IO ()
 main = do
   args <- Env.getArgs
 
+  currentDir <- getCurrentDirectory
+
   case getOpt Permute options args of
     (opts, left, []) -> do
 
          if Help `elem` opts 
          then printHelp 
-         else case createLogFunc opts of
+         else case createLogFunc currentDir opts of
                 Right logFunc -> 
                     Env.withArgs left $ void $ ifAdbPresent $ fuseMain (adbFSOps logFunc) defaultExceptionHandler
 
@@ -62,8 +66,8 @@ options = [ Option ['l'] ["loglevel"] (ReqArg toLogLevel "MODE")  "silent, fails
           toLogLevel _        = LogLevel Nothing
           ok = LogLevel . Just
 
-createLogFunc :: [Option] -> Either String LogFunction
-createLogFunc options 
+createLogFunc :: FilePath -> [Option] -> Either String LogFunction
+createLogFunc currentDir options 
     | Nothing <- logLevel
     , Nothing <- logFile 
     = noLogging
@@ -102,8 +106,9 @@ createLogFunc options
           doLog filter file = 
               Right $ \resultMsg -> \logged -> 
                                     case filter resultMsg of
-                                         Just msg -> appendFile file $ concat logged ++ "\n" ++ msg ++ "\n------------------"
+                                         Just msg -> appendFile targetPath $ concat logged ++ "\n" ++ msg ++ "\n------------------"
                                          _ -> return ()
+                  where targetPath = currentDir </> file
 
           fnd f = join $ find isJust $ map f options
 
