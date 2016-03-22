@@ -236,6 +236,7 @@ adbFSOps logFunc =
                                           run forResult $ method "fuseReadDirectory" 
                                                   >> path `as` "path"
                                                   >> (fseReadDirectory $ pathToFsEntry path)
+                    , fuseGetFileSystemStats = adbFsGetFileSystemStats
                     , fuseReadSymbolicLink = \path -> 
                                              run forResult $ method "fuseReadSymbolicLink" 
                                                      >> path `as` "path"
@@ -411,6 +412,19 @@ pathToFsEntry path =
       Just (Device deviceName) -> deviceRootEntry
       Just (DeviceFs deviceName) -> deviceFsEntry deviceName ""
       Just (InDeviceFs deviceName innerPath) -> deviceFsEntry deviceName innerPath
+
+
+adbFsGetFileSystemStats :: String -> IO (Either Errno FileSystemStats)
+adbFsGetFileSystemStats str =
+  return $ Right $ FileSystemStats
+    { fsStatBlockSize = 512
+    , fsStatBlockCount = 1
+    , fsStatBlocksFree = 1
+    , fsStatBlocksAvailable = 1
+    , fsStatFileCount = 5
+    , fsStatFilesFree = 10
+    , fsStatMaxNameLength = 255
+    }
 
 type Parser = P.Parsec String ()
 
