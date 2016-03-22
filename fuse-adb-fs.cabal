@@ -71,7 +71,7 @@ executable fuse-adb-fs
                       unix >= 2.7 && <2.8,
                       bytestring >= 0.10 && <0.11,
                       parsec >=3.1 && <3.2,
-                      filepath >=1.3 && <1.4,
+                      filepath >=1.4 && <1.5,
                       random >= 1.1 && <1.2
 
   default-language:    Haskell2010
