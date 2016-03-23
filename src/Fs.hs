@@ -187,6 +187,7 @@ instance Show OpenFileFlags where
                                                                 , (nonblock, "nonblock")
                                                                 , (trunc, "trunc")]
 
+blockSize :: Int
 blockSize = 1024 * 50
 
 defaultFsEntry :: FsEntry
@@ -417,12 +418,12 @@ pathToFsEntry path =
 adbFsGetFileSystemStats :: String -> IO (Either Errno FileSystemStats)
 adbFsGetFileSystemStats str =
   return $ Right $ FileSystemStats
-    { fsStatBlockSize = 512
-    , fsStatBlockCount = 1
-    , fsStatBlocksFree = 1
-    , fsStatBlocksAvailable = 1
-    , fsStatFileCount = 5
-    , fsStatFilesFree = 10
+    { fsStatBlockSize = fromIntegral blockSize
+    , fsStatBlockCount = 1000000
+    , fsStatBlocksFree = 1000000
+    , fsStatBlocksAvailable = 1000000
+    , fsStatFileCount = 500
+    , fsStatFilesFree = 1000
     , fsStatMaxNameLength = 255
     }
 
