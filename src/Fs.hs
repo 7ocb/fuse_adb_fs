@@ -41,26 +41,6 @@ data Error = Error { eErrno ::  Errno }
 
 type FileHandle = (DeviceId, FilePath)
 
-
-
-main :: IO ()
-main = do
-  args <- Env.getArgs
-
-  case getOpt Permute options args of
-    (opts, left, []) -> do
-
-         case createLogFunc opts of
-           Right logFunc -> 
-               Env.withArgs left $ void $ ifAdbPresent $ fuseMain (adbFSOps logFunc) defaultExceptionHandler
-
-           Left error -> ioError $ userError error
-
-    (_, _, errors) -> ioError (userError $ concat errors)
-
-
-
-
 type DeviceId = String
 type FsCall a = IO (Either Error a)
 type FilesList = [(FilePath, FileStat)]
@@ -88,62 +68,7 @@ data LogLevel = LogSilent
 data Option = LogLevel (Maybe LogLevel)
             | LoggingFile String
 
-
-options :: [OptDescr Option]
-options = [ Option ['l'] ["loglevel"] (ReqArg toLogLevel "MODE") "silent, fails, full"
-          , Option ['f'] ["logfile"]  (ReqArg LoggingFile "FILE") "write log to FILE" ]
-    where toLogLevel "silent" = ok LogSilent
-          toLogLevel "fails"  = ok LogFailsOnly
-          toLogLevel "full"   = ok LogFull
-          toLogLevel _        = LogLevel Nothing
-          ok = LogLevel . Just
-
 type LogFunction = Either String String -> [String] -> IO ()
-
-createLogFunc :: [Option] -> Either String LogFunction
-createLogFunc options 
-    | Nothing <- logLevel
-    , Nothing <- logFile 
-    = noLogging
-
-    | Just _ <- logLevel
-    , Nothing <- logFile
-    = Left "if log level specified, log file should be specified too"
-
-    | Nothing <- logLevel
-    , Just file <- logFile
-    = logFull file
-
-    | Just level <- logLevel
-    , Just file <- logFile
-    = case level of 
-        Just LogSilent -> noLogging
-        Just LogFailsOnly -> logFails file
-        Just LogFull -> logFull file
-        Nothing -> logFull file
-
-    where toLogLevel (LogLevel l) = Just l
-          toLogLevel _ = Nothing
-
-          toLogFile (LoggingFile f) = Just f
-          toLogFile _ = Nothing
-
-          logLevel = fnd toLogLevel
-          logFile = fnd toLogFile
-
-          noLogging = Right $ const $ const $ return ()
-
-          logFull = doLog $ either Just Just
-          logFails = doLog $ either Just $ const Nothing
-
-          doLog :: (Either String String -> Maybe String) -> String -> Either String LogFunction
-          doLog filter file = 
-              Right $ \resultMsg -> \logged -> 
-                                    case filter resultMsg of
-                                         Just msg -> appendFile file $ concat logged ++ "\n" ++ msg ++ "\n------------------"
-                                         _ -> return ()
-
-          fnd f = join $ find isJust $ map f options
 
 msgError :: (MonadError Error m, MonadWriter [String] m) => Errno -> String -> m a
 msgError code msg = do 
