@@ -3,20 +3,21 @@
 {-# LANGUAGE FlexibleInstances #-}
 
 module Adb (isAdbPresent,
-                    ifAdbPresent,
-                    runAdbIO,
-                    callAdb,
-                    callForDevice,
-                    queryDevice,
-                    Information(..),
-                    Device,
-                    deviceType,
-                    serialNo,
-                    model,
-                    device,
-                    DeviceType(..),
-                    listDevices,
-                    startAdbProcess)
+            ifAdbPresent,
+            runAdbIO,
+            callAdb,
+            callForDevice,
+            queryDevice,
+            Information(..),
+            Device,
+            deviceType,
+            serialNo,
+            model,
+            device,
+            DeviceType(..),
+            listDevices,
+            startAdbProcess,
+            MonadAdb)
 where
 
 import Data.List.Split (wordsBy, splitOn)

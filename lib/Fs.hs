@@ -3,7 +3,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module Fs (adbFSOps, LogFunction) where
+module Fs (adbFSOps, 
+           LogFunction, 
+           PathQualification(..),
+           qualifyPath) where
 
 import System.Fuse
 
