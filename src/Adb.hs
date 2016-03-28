@@ -3,20 +3,20 @@
 {-# LANGUAGE FlexibleInstances #-}
 
 module Adb (isAdbPresent,
-                    ifAdbPresent,
-                    runAdbIO,
-                    callAdb,
-                    callForDevice,
-                    queryDevice,
-                    Information(..),
-                    Device,
-                    deviceType,
-                    serialNo,
-                    model,
-                    device,
-                    DeviceType(..),
-                    listDevices,
-                    startAdbProcess)
+            ifAdbPresent,
+            runAdbIO,
+            callAdb,
+            callForDevice,
+            queryDevice,
+            Information(..),
+            Device,
+            deviceType,
+            serialNo,
+            model,
+            device,
+            DeviceType(..),
+            listDevices,
+            startAdbProcess)
 where
 
 import Data.List.Split (wordsBy, splitOn)
@@ -32,31 +32,31 @@ import Control.Monad.Writer
 data Information = Logcat
                  | Bugreport
 
-class Monad m => MonadAdb m where
-    callAdb :: [String] -> m String
-    restartAdb :: m Bool
+-- class ShellCall m => MonadAdb m where
+--     callAdb :: [String] -> m String
+--     restartAdb :: m Bool
 
 
-newtype AdbIO a = A { runAdbIO :: IO a } 
-    deriving (Monad)
+-- newtype AdbIO a = A { runAdbIO :: IO a } 
+--     deriving (Monad)
 
-instance Functor AdbIO where
-    fmap = liftM
+-- instance Functor AdbIO where
+--     fmap = liftM
  
-instance Applicative AdbIO where
-    pure  = return
-    (<*>) = ap
+-- instance Applicative AdbIO where
+--     pure  = return
+--     (<*>) = ap
 
-instance MonadAdb AdbIO where
-    callAdb parameters = A (catch (readProcess "adb" parameters "")
-                                      ((\e -> return "") :: IOException -> IO String))
-    restartAdb = A $ do
-                   let isSuccess = liftM (== ExitSuccess)
+-- instance MonadAdb AdbIO where
+--     callAdb parameters = A (catch (readProcess "adb" parameters "")
+--                                       ((\e -> return "") :: IOException -> IO String))
+--     restartAdb = A $ do
+--                    let isSuccess = liftM (== ExitSuccess)
 
-                   stoppingSucceed <- isSuccess $ Proc.system "sudo adb kill-server"
-                   if stoppingSucceed == True
-                   then isSuccess $ Proc.system "sudo adb start-server"
-                   else return False
+--                    stoppingSucceed <- isSuccess $ Proc.system "sudo adb kill-server"
+--                    if stoppingSucceed == True
+--                    then isSuccess $ Proc.system "sudo adb start-server"
+--                    else return False
 
 callForDevice :: MonadAdb m => Device -> [String] -> m String
 callForDevice device command = 

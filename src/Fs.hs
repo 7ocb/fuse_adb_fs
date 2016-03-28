@@ -6,6 +6,7 @@
 module Fs (adbFSOps, LogFunction) where
 
 import System.Fuse
+import qualified FsIO as FsIO
 
 import qualified Data.ByteString.Char8 as B
 import Adb (serialNo, runAdbIO, listDevices, ifAdbPresent, Device)
@@ -48,8 +49,6 @@ type FilesList = [(FilePath, FileStat)]
 type AdbFsCall = ExceptT Error (WriterT [String] IO)
 
 type DeviceCall = ReaderT Device AdbFsCall
-
-
 
 instance Monoid FileMode where
     mempty = nullFileMode
