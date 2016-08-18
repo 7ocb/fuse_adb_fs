@@ -1,0 +1,1 @@
+-rw-rw---- root     sdcard_r 230000000 2016-10-19 02:17 space-taker

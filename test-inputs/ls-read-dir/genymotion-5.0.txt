@@ -1,0 +1,36 @@
+drwxr-xr-x root     root              2016-10-18 06:28 acct
+drwxrwx--- system   cache             2015-09-25 07:01 cache
+lrwxrwxrwx root     root              1969-12-31 19:00 charger -> /sbin/healthd
+dr-x------ root     root              2016-10-18 06:28 config
+lrwxrwxrwx root     root              2016-10-18 06:28 d -> /sys/kernel/debug
+drwxrwx--x system   system            2015-10-02 11:39 data
+-rw-r--r-- root     root          316 1969-12-31 19:00 default.prop
+drwxr-xr-x root     root              2016-10-18 06:28 dev
+lrwxrwxrwx root     root              2016-10-18 06:28 etc -> /system/etc
+-rw-r--r-- root     root        10771 1969-12-31 19:00 file_contexts
+-rw-r----- root     root          382 1969-12-31 19:00 fstab.vbox86
+-rwxr-x--- root     root       600228 1969-12-31 19:00 init
+-rwxr-x--- root     root          981 1969-12-31 19:00 init.environ.rc
+-rwxr-x--- root     root        22483 1969-12-31 19:00 init.rc
+-rwxr-x--- root     root         1927 1969-12-31 19:00 init.trace.rc
+-rwxr-x--- root     root         3885 1969-12-31 19:00 init.usb.rc
+-rwxr-x--- root     root         2642 1969-12-31 19:00 init.vbox86.rc
+-rwxr-x--- root     root          256 1969-12-31 19:00 init.vbox86p.rc
+-rwxr-x--- root     root          301 1969-12-31 19:00 init.zygote32.rc
+drwxrwxr-x root     system            2016-10-18 06:28 mnt
+dr-xr-xr-x root     root              2016-10-18 06:28 proc
+-rw-r--r-- root     root         2614 1969-12-31 19:00 property_contexts
+-rw-r--r-- root     root        31913 1969-12-31 19:00 rom.trace
+drwx------ root     root              2015-04-27 05:55 root
+drwxr-x--- root     root              1969-12-31 19:00 sbin
+lrwxrwxrwx root     root              2016-10-18 06:28 sdcard -> /storage/emulated/legacy
+-rw-r--r-- root     root          471 1969-12-31 19:00 seapp_contexts
+-rw-r--r-- root     root           71 1969-12-31 19:00 selinux_version
+-rw-r--r-- root     root       115854 1969-12-31 19:00 sepolicy
+-rw-r--r-- root     root         9430 1969-12-31 19:00 service_contexts
+drwxr-x--x root     sdcard_r          2016-10-18 06:28 storage
+dr-xr-xr-x root     root              2016-10-18 06:28 sys
+drwxr-xr-x root     root              1969-12-31 19:00 system
+-rw-r--r-- root     root         4389 1969-12-31 19:00 ueventd.rc
+-rw-r--r-- root     root           30 1969-12-31 19:00 ueventd.vbox86.rc
+lrwxrwxrwx root     root              2016-10-18 06:28 vendor -> /system/vendor

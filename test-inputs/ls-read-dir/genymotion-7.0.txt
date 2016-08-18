@@ -1,0 +1,41 @@
+total 3560
+drwxr-xr-x  15 root   root         0 2016-10-19 04:25 .
+drwxr-xr-x  15 root   root         0 2016-10-19 04:25 ..
+drwxr-xr-x  25 root   root         0 2016-10-19 04:25 acct
+drwxrwx---   6 system cache     4096 2016-10-17 06:48 cache
+lrwxrwxrwx   1 root   root        13 1969-12-31 19:00 charger -> /sbin/healthd
+drwxr-xr-x   3 root   root         0 2016-10-19 04:25 config
+lrwxrwxrwx   1 root   root        17 1969-12-31 19:00 d -> /sys/kernel/debug
+drwxrwx--x  35 system system    4096 2016-10-19 04:25 data
+-rw-r--r--   1 root   root       923 1969-12-31 19:00 default.prop
+drwxr-xr-x  15 root   root      2700 2016-10-19 04:25 dev
+lrwxrwxrwx   1 root   root        11 1969-12-31 19:00 etc -> /system/etc
+-rw-r--r--   1 root   root     72030 1969-12-31 19:00 file_contexts.bin
+-rw-r-----   1 root   root       396 1969-12-31 19:00 fstab.vbox86
+-rwxr-x---   1 root   root   1445460 1969-12-31 19:00 init
+-rwxr-x---   1 root   root       887 1969-12-31 19:00 init.environ.rc
+-rwxr-x---   1 root   root     25475 1969-12-31 19:00 init.rc
+-rwxr-x---   1 root   root      9283 1969-12-31 19:00 init.usb.configfs.rc
+-rwxr-x---   1 root   root      5707 1969-12-31 19:00 init.usb.rc
+-rwxr-x---   1 root   root      2086 1969-12-31 19:00 init.vbox86.rc
+-rwxr-x---   1 root   root       256 1969-12-31 19:00 init.vbox86p.rc
+-rwxr-x---   1 root   root       439 1969-12-31 19:00 init.zygote32.rc
+drwxr-xr-x  11 root   system     240 2016-10-19 04:25 mnt
+drwxr-xr-x   2 root   root         0 1969-12-31 19:00 oem
+dr-xr-xr-x 134 root   root         0 2016-10-19 04:25 proc
+-rw-r--r--   1 root   root      4162 1969-12-31 19:00 property_contexts
+-rw-r--r--   1 root   root         0 1969-12-31 19:00 rom.trace
+drwx------   2 root   root         0 2016-01-12 03:58 root
+drwxr-x---   2 root   root         0 2016-10-19 04:25 sbin
+lrwxrwxrwx   1 root   root        21 1969-12-31 19:00 sdcard -> /storage/self/primary
+-rw-r--r--   1 root   root       758 1969-12-31 19:00 seapp_contexts
+-rw-r--r--   1 root   root        69 1969-12-31 19:00 selinux_version
+-rw-r--r--   1 root   root    172552 1969-12-31 19:00 sepolicy
+-rw-r--r--   1 root   root     11085 1969-12-31 19:00 service_contexts
+drwxr-xr-x   4 root   root        80 2016-10-19 04:26 storage
+dr-xr-xr-x  12 root   root         0 2016-10-19 04:25 sys
+drwxr-xr-x  17 root   root      4096 1969-12-31 19:00 system
+lrwxrwxrwx   1 root   root        15 2016-10-19 04:25 tmp -> /data/local/tmp
+-rw-r--r--   1 root   root      4853 1969-12-31 19:00 ueventd.rc
+-rw-r--r--   1 root   root        30 1969-12-31 19:00 ueventd.vbox86.rc
+lrwxrwxrwx   1 root   root        14 1969-12-31 19:00 vendor -> /system/vendor

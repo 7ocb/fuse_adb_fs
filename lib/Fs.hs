@@ -2,16 +2,20 @@
 {-# LANGUAGE TypeSynonymInstances #-} 
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Fs (adbFSOps, 
            LogFunction, 
            PathQualification(..),
-           qualifyPath) where
+           qualifyPath,
+           emptyDirContents) where
 
 import System.Fuse
 
+import Classes
+
 import qualified Data.ByteString.Char8 as B
-import Adb (serialNo, runAdbIO, listDevices, ifAdbPresent, Device)
+import Adb (serialNo, ifAdbPresent, Device, MonadAdb, AdbFail)
 import qualified Adb as Adb
 
 import qualified System.Environment as Env
@@ -23,6 +27,13 @@ import Control.Monad.Writer
 import Control.Monad.Reader
 import Control.Applicative ((<*))
 
+import qualified Utils as U
+
+import Types
+
+import Parsers (Parser)
+import qualified Parsers as P
+
 import System.FilePath
 
 import System.Console.GetOpt
@@ -32,15 +43,10 @@ import System.Posix.Types
 import System.Posix.Files
 import System.Posix.IO
 
-import qualified Text.Parsec as P
-import Text.Parsec (oneOf, count, anyChar, digit, manyTill, space, spaces, many1, choice, try, char, string, many, eof, noneOf)
 import Data.Maybe (fromMaybe, isJust)
 import Data.List (find, intercalate)
 
 import Prelude hiding (log)
-
-data Error = Error { eErrno ::  Errno }
-           deriving (Show, Eq)
 
 type FileHandle = (DeviceId, FilePath)
 
@@ -50,19 +56,57 @@ type FilesList = [(FilePath, FileStat)]
 
 type AdbFsCall = ExceptT Error (WriterT [String] IO)
 
+
+
 type DeviceCall = ReaderT Device AdbFsCall
 
+getFuseUID :: (MonadIO m) => m UserID
+getFuseUID = fuseCtxUserID <$> (liftIO $ getFuseContext)
+
+getFuseGID :: (MonadIO m) => m GroupID
+getFuseGID = fuseCtxGroupID <$> (liftIO $ getFuseContext)
+
+instance GetFuseContext AdbFsCall where 
+    fuseUID = getFuseUID
+    fuseGID = getFuseGID
+
+instance GetFuseContext DeviceCall where 
+    fuseUID = getFuseUID
+    fuseGID = getFuseGID
+
+instance WithCurrentDevice DeviceCall where
+    currentDevice = ask
+    callCurrentDevice args = 
+        do device <- ask
+           liftAdbCall $ Adb.callForDevice device args
+
+listDevices :: (MonadIO m) => m (Either String [Device])
+listDevices = liftIO $ runExceptT Adb.listDevices
+
+liftAdbCall :: (CanFail o, MonadIO o) => ExceptT String IO a -> o a
+liftAdbCall action = do
+  value <- liftIO $ runExceptT action
+  case value of
+    Right r -> return r
+    -- TODO: logs?
+    Left e -> simpleError eINVAL
+  
+
+instance (Monad m, MonadWriter [String] m) => Logging m where
+    writeLog l = tell [l]
 
 
-instance Monoid FileMode where
-    mempty = nullFileMode
-    mappend = unionFileModes
+instance (Monad m, MonadError Error m) => CanFail m where
+    failWith error = throwError error
+
+
+
 
 onDevice :: DeviceId -> DeviceCall a -> AdbFsCall a
 onDevice deviceId action = findDevice deviceId >>= runReaderT action 
 
-simpleError :: (MonadError Error m) => Errno -> m a
-simpleError code = throwError $ Error code 
+simpleError :: (CanFail m) => Errno -> m a
+simpleError code = failWith $ Error code 
 
 data LogLevel = LogSilent
               | LogFailsOnly
@@ -93,14 +137,11 @@ data FsEntry = FsEntry { fseOpen             :: OpenMode -> OpenFileFlags -> Adb
                        , fseRemoveLink       :: AdbFsCall Errno
                        , fseRemoveDirectory  :: AdbFsCall Errno}
 
-log :: MonadWriter [String] m => String -> m ()
-log ln = tell [ln]
+log :: Logging m => String -> m ()
+log l = writeLog l
 
-logLn :: MonadWriter [String] m => String -> m ()
-logLn ln = tell [ln ++ "\n"]
-
-instance Show Errno where
-    show (Errno c) = show c
+logLn :: Logging m => String -> m ()
+logLn ln = writeLog $ ln ++ "\n"
 
 instance Show OpenMode where
     show ReadOnly = "ro"
@@ -114,9 +155,6 @@ instance Show OpenFileFlags where
                                                                 , (noccty, "noccty")
                                                                 , (nonblock, "nonblock")
                                                                 , (trunc, "trunc")]
-
-blockSize :: Int
-blockSize = 1024 * 50
 
 defaultFsEntry :: FsEntry
 defaultFsEntry = FsEntry { fseOpen             = const $ const $ noImpl
@@ -224,42 +262,38 @@ adbFSOps logFunc =
               forResult = either (Left . eErrno) Right 
 
 
-dirStat :: FuseContext -> FileStat
-dirStat ctx = FileStat { statEntryType = Directory
-                       , statFileMode = mconcat
-                                          [ ownerReadMode
-                                          , ownerExecuteMode
-                                          , groupReadMode
-                                          , groupExecuteMode
-                                          , otherReadMode
-                                          , otherExecuteMode
-                                          ]
-                       , statLinkCount = 2
-                       , statFileOwner = fuseCtxUserID ctx
-                       , statFileGroup = fuseCtxGroupID ctx
-                       , statSpecialDeviceID = 0
-                       , statFileSize = 4096
-                       , statBlocks = 1
-                       , statAccessTime = 0
-                       , statModificationTime = 0
-                       , statStatusChangeTime = 0}
+dirStat :: (GetFuseContext m) => m FileStat
+dirStat = do 
+  uid <- fuseUID
+  gid <- fuseGID
+  
+  return $ FileStat { statEntryType = Directory
+                    , statFileMode = mconcat
+                                     [ ownerReadMode
+                                     , ownerExecuteMode
+                                     , groupReadMode
+                                     , groupExecuteMode
+                                     , otherReadMode
+                                     , otherExecuteMode
+                                     ]
+                    , statLinkCount = 2
+                    , statFileOwner = uid
+                    , statFileGroup = gid
+                    , statSpecialDeviceID = 0
+                    , statFileSize = 4096
+                    , statBlocks = 1
+                    , statAccessTime = 0
+                    , statModificationTime = 0
+                    , statStatusChangeTime = 0}
 
-
-
-
-emptyDirContents :: AdbFsCall FilesList
+emptyDirContents :: GetFuseContext m => m FilesList
 emptyDirContents = dirsFromNames [".", ".."]
 
 instance (Monoid (AdbFsCall FilesList)) where
     mempty = return $ []
     mappend l r = (++) <$> r  <*> l
 
-getDirStat :: AdbFsCall FileStat
-getDirStat = do
-  ctx <- liftIO $ getFuseContext
-  return $ dirStat ctx
-
-rootEntry = defaultFsEntry { fseGetFileStat = getDirStat
+rootEntry = defaultFsEntry { fseGetFileStat = dirStat
                            , fseOpenDirectory = return eOK
                            , fseReadDirectory = emptyDirContents `mappend` dirsFromDevices }
 
@@ -279,14 +313,14 @@ deviceFsEntry deviceId path
                      , fseRemoveDirectory = onDevice deviceId $ deviceDeleteDir path }
 
 
-deviceRootEntry = defaultFsEntry { fseGetFileStat = getDirStat
+deviceRootEntry = defaultFsEntry { fseGetFileStat = dirStat
                                  , fseOpenDirectory = return eOK
                                  , fseReadDirectory = emptyDirContents `mappend` dirsOfDevicePseudoFs }
 
-dirsFromNames :: [String] -> AdbFsCall FilesList
-dirsFromNames names = do
-  ctx <- liftIO $ getFuseContext
-  return $ map ((\n -> (n, dirStat ctx))) names
+dirsFromNames :: GetFuseContext m => [String] -> m FilesList
+dirsFromNames names = do 
+  ds <- dirStat
+  return $ map ((\n -> (n, ds))) names
 
 dirsOfDevicePseudoFs :: AdbFsCall FilesList
 dirsOfDevicePseudoFs = dirsFromNames ["fs"]
@@ -298,38 +332,11 @@ randomFileIn path = do
 
 dirsFromDevices :: AdbFsCall FilesList
 dirsFromDevices = do
-  devices <- (either (const []) id) <$> (liftIO $ runAdbIO $ listDevices)
+  devices <- (either (const []) id) <$> listDevices
   dirsFromNames $ map serialNo devices
 
-data PathQualification = FsRoot
-                       | Device String
-                       | DeviceFs String
-                       | InDeviceFs String String
-                         deriving (Show, Eq)
-
 qualifyPath :: String -> Maybe PathQualification
-qualifyPath path = either (const Nothing) Just $ P.parse parser "" path
-    where parser = do
-            let pathSep = char '/'
-                v `ifEndOr` otherwise = choice [try $ eof >> return v,
-                                                otherwise]
-
-                nextPart = many $ noneOf "/"
-
-            pathSep
-
-            FsRoot `ifEndOr` do
-                     deviceName <- nextPart
-
-                     (Device deviceName) `ifEndOr` do
-                               pathSep
-                               subdevice <- nextPart
-
-                               if subdevice == "fs"
-
-                               then (DeviceFs deviceName) `ifEndOr` ((InDeviceFs deviceName) <$> (many $ anyChar))
-
-                               else error "unknown"
+qualifyPath path = either (const Nothing) Just $ P.parse P.adbFsPath path
 
 
 
@@ -343,10 +350,16 @@ pathToFsEntry path =
       Just (InDeviceFs deviceName innerPath) -> deviceFsEntry deviceName innerPath
 
 
+fsBlockSize :: Int
+fsBlockSize = 1024 * 50
+
+blockify :: ByteCount -> FileOffset -> U.Block
+blockify = U.blockify $ fsBlockSize
+
 adbFsGetFileSystemStats :: String -> IO (Either Errno FileSystemStats)
 adbFsGetFileSystemStats str =
   return $ Right $ FileSystemStats
-    { fsStatBlockSize = fromIntegral blockSize
+    { fsStatBlockSize = fromIntegral fsBlockSize
     , fsStatBlockCount = 1000000
     , fsStatBlocksFree = 1000000
     , fsStatBlocksAvailable = 1000000
@@ -355,91 +368,16 @@ adbFsGetFileSystemStats str =
     , fsStatMaxNameLength = 255
     }
 
-type Parser = P.Parsec String ()
 
 data LsError = PermissionDenied String
 
-data RemoteFsEntry = RemoteFsEntry { rfseMode :: FileMode
-                                   , rfseSize :: Integer
-                                   , rfseName :: String }
-                   deriving (Show, Eq)
-
-parseFileModeRWXFormat :: Parser FileMode
-parseFileModeRWXFormat = mconcat <$> modes
-    where modes = forM format $ \alternatives -> do
-                    c <- anyChar
-                    return $ fromMaybe mempty $ lookup c alternatives
-
-          format = [[('d', directoryMode),
-                     ('l', symbolicLinkMode)],
-
-                    [('r', ownerReadMode)],
-                    [('w', ownerWriteMode)],
-                    [('x', ownerExecuteMode)],
-                    [('r', groupReadMode)],
-                    [('w', groupWriteMode)],
-                    [('x', groupExecuteMode)],
-                    [('r', otherReadMode)],
-                    [('w', otherWriteMode)],
-                    [('x', otherExecuteMode)]]
-
-newline :: Parser String
-newline = choice [try $ string "\r\n",
-                  try $ string "\n",
-                  string "\r"]
-
-tillEndOfLine :: Parser String
-tillEndOfLine = anyChar `manyTill` newline
-
-parseAdbLsLine :: Parser RemoteFsEntry
-parseAdbLsLine = do
-  mode <- parseFileModeRWXFormat
-  -- skip group
-  spaces
-  manyTill anyChar space
-  -- skip user
-  spaces
-  manyTill anyChar space
-  spaces
-
-  let parseDate = (num 4) >> char '-' >> (num 2) >> char '-' >> (num 2) >> char ' ' >> (num 2) >> char ':' >> (num 2)
-      num cnt = count cnt digit
-      parseName = if intersectFileModes mode symbolicLinkMode /= nullFileMode
-                  then anyChar `manyTill` (string " -> ") <* anyChar `manyTill` newline
-                  else anyChar `manyTill` newline
-
-  (size, name) <- choice [try $ do
-                            size <- read <$> many1 digit
-                            spaces
-                            parseDate
-                            space
-                            name <- parseName
-                            return (size, name),
-                          do
-                            parseDate
-                            space
-                            name <- parseName
-                            return (0, name)]
 
 
-  return $ RemoteFsEntry mode size name
 
-permissionDeniedItem :: Parser RemoteFsEntry
-permissionDeniedItem = do 
-  anyChar `manyTill` char '\''
-  name <- anyChar `manyTill` (try $ string "' failed: Permission denied")
-  newline 
-
-  return $ RemoteFsEntry nullFileMode 0 $ takeFileName name
-
-parseAdbLs :: Parser [RemoteFsEntry]
-parseAdbLs = many $ choice [try $ parseAdbLsLine,
-                            permissionDeniedItem]
-            
 
 findDevice :: DeviceId -> AdbFsCall Device
 findDevice deviceId = do
-  devicesResponse <- (liftIO $ runAdbIO listDevices)
+  devicesResponse <- listDevices
   case devicesResponse of 
     Left error -> msgError eNOENT error
     Right devices -> 
@@ -447,9 +385,9 @@ findDevice deviceId = do
           Just device -> return device
           Nothing -> msgError eNOENT $ "No deivce: " ++ deviceId
 
-deviceShellCall :: [String] -> DeviceCall (Either String String)
+deviceShellCall :: (Logging m, WithCurrentDevice m) => [String] -> m (Either String String)
 deviceShellCall inArgs = do
-  device <- ask
+  device <- currentDevice
 
   let args = ["shell"] ++ (map quote $ ["(", "("] ++ inArgs ++ [")", "&&", echo ok, ")", "||", echo fail])
       quote (c:xs) = if c `elem` quotable
@@ -464,7 +402,7 @@ deviceShellCall inArgs = do
 
   logLn $ "adb (" ++ (serialNo device) ++ " ) shell call: " ++ (show args)
 
-  rawResponse <- liftIO $ runAdbIO $ Adb.callForDevice device args
+  rawResponse <- callCurrentDevice args
 
   logLn $ "response: " ++ rawResponse
 
@@ -476,22 +414,22 @@ deviceShellCall inArgs = do
   return $ resultType response
 
 parseWith :: Parser a -> String -> DeviceCall a
-parseWith parser string = case P.parse parser "" string of
+parseWith parser string = case P.parse parser string of
                             Left err -> do 
                               logLn $ "can't be parsed: " ++ (show err)
                               simpleError eINVAL
                             Right result -> return result
 
-deviceCall :: [String] -> Parser a -> DeviceCall a
+deviceCall :: (CanFail m, Logging m, WithCurrentDevice m) => [String] -> Parser a -> m a
 deviceCall args parser = do
-  device <- ask
 
-  response <- liftIO $ runAdbIO $ Adb.callForDevice device args
+  response <- callCurrentDevice args
+  device <- currentDevice
 
   logLn $ "adb (" ++ (serialNo device) ++ " ) call: " ++ (show args)
   logLn $ "response: " ++ response
 
-  case P.parse parser "" response of
+  case P.parse parser response of
     Left err -> do 
       logLn $ "response can't be parsed: " ++ (show err)
       simpleError eINVAL
@@ -500,55 +438,29 @@ deviceCall args parser = do
 
 
 
-emptyResponse :: Parser ()
-emptyResponse = eof
 
-acceptAnything :: Parser ()
-acceptAnything = return ()
 
 deviceLs :: String -> DeviceCall FilesList
-deviceLs path = do 
-  ctx <- liftIO $ getFuseContext
-
-  let filesFromRemoteEntries = map (statFromRemoteFsEntry ctx)
-
-  deviceCall ["shell", "ls", "-al", path ++ "/"] $ filesFromRemoteEntries <$> parseAdbLs
+deviceLs path = (deviceCall ["shell", "ls", "-al", path ++ "/"] $ P.rfseFromAdbLs) >>= mapM statFromRemoteFsEntry 
 
 
 deviceReadLink :: FilePath -> DeviceCall FilePath
-deviceReadLink path = deviceCall ["shell", "realpath", "/" ++ path] $ upToRoot <$> (anyChar `manyTill` newline)
+deviceReadLink path = deviceCall ["shell", "realpath", "/" ++ path] $ upToRoot <$> P.filePathFromRealpathResponse
     where upToRoot innerPath@(firstChar:_) = if firstChar == '/'
                                              then pathRelativeToRoot innerPath
                                              else innerPath
           pathRelativeToRoot p = "." ++ (concat (take ((length $ splitPath path) - 2) $ repeat "/..")) ++ p
 
-deviceStat :: FilePath -> DeviceCall FileStat
+deviceStat :: (WithCurrentDevice m, Logging m, CanFail m, GetFuseContext m) => FilePath -> m FileStat
 deviceStat path = do
-  ctx <- liftIO getFuseContext
 
-  let parseResponse = choice [Just <$> try parseAdbLsLine
-                             , Just <$> try permissionDeniedItem
-                             , parseNotFound >> return Nothing]
+  let args = ["shell", "ls", "-ald", "/" ++ path]
 
-      parseNotFound = anyChar `manyTill` (string ": No such file or directory")
-
-      toFileStat = snd . statFromRemoteFsEntry ctx
-
-      args = ["shell", "ls", "-ald", "/" ++ path]
-
-  statResult <- deviceCall args parseResponse
+  statResult <- deviceCall args P.singleFileStat
 
   case statResult of
-    Just s -> return $ toFileStat s
+    Just s -> snd <$> statFromRemoteFsEntry s
     Nothing -> simpleError eNOENT
-
-toBlockParams :: ByteCount -> FileOffset -> (Int, Int, Int)
-toBlockParams count inOffset = (firstBlock, blocksCount, inBlockOffset)
-    where offset = (fromIntegral inOffset)
-          firstBlock = offset `div` blockSize
-          inBlockOffset = offset `mod` blockSize
-          blocksCount = (((fromIntegral count) + inBlockOffset) `div` blockSize) + 1
-
 
 withTempFile :: (MonadError Error m, MonadIO m) => FilePath -> (FilePath -> m ()) -> (FilePath -> m a) -> m a
 withTempFile prefix delete action = do
@@ -575,36 +487,41 @@ withRemoteTempFile action = do
   withTempFile "/sdcard" remoteDelete action
 
 remoteDelete :: FilePath -> DeviceCall ()
-remoteDelete filePath = deviceCall ["shell", "rm", "-f", filePath] emptyResponse
+remoteDelete filePath = deviceCall ["shell", "rm", "-f", filePath] P.emptyResponse
 
-ddCommand :: FilePath -> FilePath -> Int -> Int -> Int -> [String] 
-ddCommand iF oF skipInput skipOutput count = ["shell"
-                                             , "dd"
-                                             , "if=" ++ iF
-                                             , "of=" ++ oF
-                                             , "bs=" ++ (show blockSize)
-                                             , "skip=" ++ (show skipInput)
-                                             , "seek=" ++ (show skipOutput)
-                                             , "count=" ++ (show count)]
+ddCommand :: FilePath -> FilePath -> U.Block -> [String] 
+ddCommand iF oF (U.Block { U.blckFirstBlock = firstBlock
+                         , U.blckBlocksCount = blocksCount
+                         , U.blckBlockSize = blockSize } )
+                    = ["shell"
+                      , "dd"
+                      , "if=" ++ iF
+                      , "of=" ++ oF
+                      , "bs=" ++ (show blockSize)
+                      , "skip=" ++ (show firstBlock)
+                      , "count=" ++ (show blocksCount)]
 
 pullToTempFile :: FilePath -> (FilePath -> DeviceCall a) -> DeviceCall a
 pullToTempFile remoteFilePath action = 
   withLocalTempFile $ \tempFilePath ->
       do
         -- FIXME: response not parsed
-        deviceCall ["pull", remoteFilePath, tempFilePath] acceptAnything
+        deviceCall ["pull", remoteFilePath, tempFilePath] P.acceptAnything
 
         action tempFilePath
 
 deviceRead :: FilePath -> ByteCount -> FileOffset -> DeviceCall B.ByteString
 deviceRead path count offset = do
-  let (firstBlock, blocksCount, skipInFirstBlock) = toBlockParams count offset
+  let block@U.Block { U.blckFirstBlock = firstBlock
+                    , U.blckBlocksCount = blocksCount
+                    , U.blckOffsetInFirstBlock = skipInFirstBlock } 
+          = blockify count offset
 
   withRemoteTempFile $ \onDeviceTempFile ->
       do
 
         -- FIXME: response not parsed
-        deviceCall (ddCommand path onDeviceTempFile firstBlock 0 blocksCount) acceptAnything
+        deviceCall (ddCommand path onDeviceTempFile block) P.acceptAnything
 
         pullToTempFile onDeviceTempFile $ \localTempFile -> 
             do
@@ -616,7 +533,12 @@ deviceWrite :: FilePath -> B.ByteString -> FileOffset -> DeviceCall ByteCount
 deviceWrite targetPath dataToWrite offset = do
   -- at first we need to get original block containing the data to be
   -- written, as we can only "dd" data to file
-  let blockInfo@(firstBlock, blocksCount, inBlockOffset) = toBlockParams (fromIntegral dataSize) offset
+  let block@U.Block { U.blckFirstBlock = firstBlock
+                    , U.blckBlocksCount = blocksCount
+                    , U.blckOffsetInFirstBlock = inBlockOffset
+                    , U.blckBlockSize = blockSize } 
+          = blockify (fromIntegral dataSize) offset
+
       dataSize = B.length dataToWrite
 
   originalBlock <- deviceRead targetPath (fromIntegral (blocksCount * blockSize)) (fromIntegral (firstBlock * blockSize))
@@ -629,9 +551,9 @@ deviceWrite targetPath dataToWrite offset = do
       withRemoteTempFile $ \remotePath -> do
                  liftIO $ B.writeFile localPath transformedBlock
 
-                 deviceCall ["push", localPath, remotePath] eof
+                 deviceCall ["push", localPath, remotePath] P.emptyResponse
 
-                 deviceCall (ddCommand remotePath targetPath 0 firstBlock blocksCount) $ many anyChar
+                 deviceCall (ddCommand remotePath targetPath block) $ P.acceptAnything
 
   return $ fromIntegral dataSize
 
@@ -639,56 +561,60 @@ deviceWrite targetPath dataToWrite offset = do
 
 deviceSetFileSize :: FilePath -> FileOffset -> DeviceCall Errno
 deviceSetFileSize path 0 = do 
-  deviceCall ["shell", "dd", "of=" ++ path, "count=0"] acceptAnything
+  deviceCall ["shell", "dd", "of=" ++ path, "count=0"] P.acceptAnything
   return eOK
 
 deviceSetFileSize _ _ = return eINVAL
 
 deviceCreateDevice :: FilePath -> EntryType -> DeviceID -> DeviceCall Errno
 deviceCreateDevice path RegularFile _ = do
-  deviceCall ["shell", "touch", path] emptyResponse
+  deviceCall ["shell", "touch", path] P.emptyResponse
   return eOK
 
 deviceCreateDevice _ _ _= simpleError eINVAL
 
 deviceCreateDirectory :: FilePath -> DeviceCall Errno
 deviceCreateDirectory path = do
-  deviceCall ["shell", "mkdir", path] emptyResponse
+  deviceCall ["shell", "mkdir", path] P.emptyResponse
   return eOK
 
 
 deviceDeleteFile :: FilePath -> DeviceCall Errno
 deviceDeleteFile path = do
-  deviceCall ["shell", "rm", "-f", path] emptyResponse
+  deviceCall ["shell", "rm", "-f", path] P.emptyResponse
   return eOK
 
 deviceDeleteDir :: FilePath -> DeviceCall Errno
 deviceDeleteDir path = do
-  deviceCall ["shell", "rm", "-fd", path] emptyResponse
+  deviceCall ["shell", "rm", "-fd", path] P.emptyResponse
   return eOK
 
 isFileMode :: FileMode -> FileMode -> Bool
 isFileMode whatToCheck modeOfQuestion = (whatToCheck `intersectFileModes` fileTypeModes) == modeOfQuestion
 
 
-statFromRemoteFsEntry :: FuseContext -> RemoteFsEntry -> (FilePath, FileStat)
-statFromRemoteFsEntry ctx (RemoteFsEntry fileMode size name) =
-    (name, FileStat { statEntryType = fromMaybe RegularFile $ snd <$> (find ((fileMode `isFileMode`) . fst)
-                                                                   [(blockSpecialMode, BlockSpecial),
-                                                                    (characterSpecialMode, CharacterSpecial),
-                                                                    (namedPipeMode, NamedPipe),
-                                                                    (directoryMode, Directory),
-                                                                    (symbolicLinkMode, SymbolicLink),
-                                                                    (socketMode, Socket)])
-                    , statFileMode = fileMode
-                    , statLinkCount = 2
-                    , statFileOwner = fuseCtxUserID ctx
-                    , statFileGroup = fuseCtxGroupID ctx
-                    , statSpecialDeviceID = 0
-                    , statFileSize = fromIntegral size
-                    , statBlocks = 1
-                    , statAccessTime = 0
-                    , statModificationTime = 0
-                    , statStatusChangeTime = 0})
+statFromRemoteFsEntry :: (GetFuseContext m) => RemoteFsEntry -> m (FilePath, FileStat)
+statFromRemoteFsEntry (RemoteFsEntry fileMode size name) = do
+  uid <- fuseUID
+  gid <- fuseGID
+
+  return (name, 
+          FileStat { statEntryType = fromMaybe RegularFile $ snd <$> (find ((fileMode `isFileMode`) . fst)
+                                                                      [(blockSpecialMode, BlockSpecial)
+                                                                       , (characterSpecialMode, CharacterSpecial)
+                                                                       , (namedPipeMode, NamedPipe)
+                                                                       , (directoryMode, Directory)
+                                                                       , (symbolicLinkMode, SymbolicLink)
+                                                                       , (socketMode, Socket)])
+                   , statFileMode = fileMode
+                   , statLinkCount = 2
+                   , statFileOwner = uid
+                   , statFileGroup = gid
+                   , statSpecialDeviceID = 0
+                   , statFileSize = fromIntegral size
+                   , statBlocks = 1
+                   , statAccessTime = 0
+                   , statModificationTime = 0
+                   , statStatusChangeTime = 0})
 
 

@@ -1,0 +1,1 @@
+-rw-r--r-- root     root          316 1969-12-31 19:00 default.prop

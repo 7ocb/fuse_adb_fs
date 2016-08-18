@@ -68,7 +68,13 @@ executable fuse-adb-fs
 
 library 
   
-  exposed-modules:    FsMain, Fs, Adb
+  exposed-modules:    FsMain
+                      , Fs
+                      , Adb
+                      , Classes
+                      , Types
+                      , Parsers
+                      , Utils
 
   
   -- Other library packages from which modules are imported.
@@ -103,8 +109,9 @@ Test-Suite fuse-adb-fs-tests
   hs-source-dirs:    tests
   Main-is:           Tests.hs
 
-
   Build-Depends:    base
+                    , mtl
+                    , unix
                     , HUnit
                     , fuse-adb-fs
 

@@ -1,0 +1,1 @@
+lrwxrwxrwx root     root              2016-10-18 06:28 vendor -> /system/vendor
