@@ -92,21 +92,41 @@ liftAdbCall action = do
     Left e -> simpleError eINVAL
   
 
-instance (Monad m, MonadWriter [String] m) => Logging m where
-    writeLog l = tell [l]
+instance Logging DeviceCall where
+    writeLog = writeLogWriter
 
+instance Logging AdbFsCall where
+    writeLog = writeLogWriter
 
-instance (Monad m, MonadError Error m) => CanFail m where
-    failWith error = throwError error
+writeLogWriter :: (MonadWriter [String] m) => String -> m ()
+writeLogWriter l = tell [l]
 
+-- instance (Monad m,) => Logging m where
+--     writeLog l = tell [l]
 
+withCleanupError :: (MonadError Error m) => m a -> m () -> m a
+withCleanupError action cleanup =
+    action `catchError` (\e -> do 
+                           cleanup
+                           throwError e)
 
+instance CanFail DeviceCall where
+    failWith = throwError
+    withCleanup = withCleanupError
+
+instance CanFail AdbFsCall where
+    failWith = throwError
+    withCleanup = withCleanupError
 
 onDevice :: DeviceId -> DeviceCall a -> AdbFsCall a
 onDevice deviceId action = findDevice deviceId >>= runReaderT action 
 
 simpleError :: (CanFail m) => Errno -> m a
 simpleError code = failWith $ Error code 
+
+deviceCallInIO :: Device -> DeviceCall a -> IO (Either Error a, [String])
+deviceCallInIO device action = 
+    runWriterT $ runExceptT $ runReaderT action device
 
 data LogLevel = LogSilent
               | LogFailsOnly
@@ -117,10 +137,10 @@ data Option = LogLevel (Maybe LogLevel)
 
 type LogFunction = Either String String -> [String] -> IO ()
 
-msgError :: (MonadError Error m, MonadWriter [String] m) => Errno -> String -> m a
+msgError :: (CanFail m, Logging m) => Errno -> String -> m a
 msgError code msg = do 
   log $ "error: " ++ msg
-  throwError $ Error code
+  failWith $ Error code
 
 data FsEntry = FsEntry { fseOpen             :: OpenMode -> OpenFileFlags -> AdbFsCall FileHandle
                        , fseRead             :: FileHandle -> ByteCount -> FileOffset -> AdbFsCall B.ByteString
@@ -462,46 +482,46 @@ deviceStat path = do
     Just s -> snd <$> statFromRemoteFsEntry s
     Nothing -> simpleError eNOENT
 
-withTempFile :: (MonadError Error m, MonadIO m) => FilePath -> (FilePath -> m ()) -> (FilePath -> m a) -> m a
+withTempFile :: (CanFail m, MonadIO m) => FilePath -> (FilePath -> m ()) -> (FilePath -> m a) -> m a
 withTempFile prefix delete action = do
   tempFile <- liftIO $ randomFileIn prefix
 
-  let performAndClean = do
-        result <- action tempFile
-        delete tempFile
-        return result
+  (action tempFile) `withCleanup` (delete tempFile)
 
-      cleanupAndRethrow e = do
-        delete tempFile
-        throwError e
+  -- let performAndClean = do
+  --       result <- action tempFile
+  --       delete tempFile
+  --       return result
 
-  performAndClean `catchError` cleanupAndRethrow
+  --     cleanupAndRethrow e = do
+  --       delete tempFile
+  --       throwError e
 
-withLocalTempFile :: (MonadError Error m, MonadIO m) => (FilePath -> m a) -> m a
+  -- performAndClean `catchError` cleanupAndRethrow
+
+withLocalTempFile :: (CanFail m, MonadIO m) => (FilePath -> m a) -> m a
 withLocalTempFile = withTempFile "/tmp" (liftIO . removeFile)
 
-withRemoteTempFile :: (FilePath -> DeviceCall a) -> DeviceCall a
-withRemoteTempFile action = do
-  device <- ask
+withRemoteTempFile :: (WithCurrentDevice m, Logging m, CanFail m, MonadIO m) => (FilePath -> m a) -> m a
+withRemoteTempFile action = withTempFile "/sdcard" remoteDelete action
 
-  withTempFile "/sdcard" remoteDelete action
-
-remoteDelete :: FilePath -> DeviceCall ()
+remoteDelete :: (WithCurrentDevice m, CanFail m, Logging m) => FilePath -> m ()
 remoteDelete filePath = deviceCall ["shell", "rm", "-f", filePath] P.emptyResponse
 
-ddCommand :: FilePath -> FilePath -> U.Block -> [String] 
+ddCommand :: FilePath -> Maybe FilePath -> U.Block -> [String] 
 ddCommand iF oF (U.Block { U.blckFirstBlock = firstBlock
                          , U.blckBlocksCount = blocksCount
                          , U.blckBlockSize = blockSize } )
-                    = ["shell"
-                      , "dd"
-                      , "if=" ++ iF
-                      , "of=" ++ oF
-                      , "bs=" ++ (show blockSize)
-                      , "skip=" ++ (show firstBlock)
-                      , "count=" ++ (show blocksCount)]
+                    = ([ "shell"
+                       , "dd"
+                       , "if=" ++ iF
+                       , "bs=" ++ (show blockSize)
+                       , "skip=" ++ (show firstBlock)
+                       , "count=" ++ (show blocksCount)]
+                       ++ ofParam)
+    where ofParam = fromMaybe [] $ fmap (\x -> ["of=" ++ x]) oF
 
-pullToTempFile :: FilePath -> (FilePath -> DeviceCall a) -> DeviceCall a
+pullToTempFile :: (WithCurrentDevice m, CanFail m, MonadIO m, Logging m) => FilePath -> (FilePath -> m a) -> m a
 pullToTempFile remoteFilePath action = 
   withLocalTempFile $ \tempFilePath ->
       do
@@ -510,24 +530,28 @@ pullToTempFile remoteFilePath action =
 
         action tempFilePath
 
-deviceRead :: FilePath -> ByteCount -> FileOffset -> DeviceCall B.ByteString
+deviceRead :: (WithCurrentDevice m, CanFail m, MonadIO m, Logging m) => FilePath -> ByteCount -> FileOffset -> m B.ByteString
 deviceRead path count offset = do
   let block@U.Block { U.blckFirstBlock = firstBlock
                     , U.blckBlocksCount = blocksCount
                     , U.blckOffsetInFirstBlock = skipInFirstBlock } 
           = blockify count offset
 
-  withRemoteTempFile $ \onDeviceTempFile ->
-      do
+      blockToResult = (B.take (fromIntegral count)) . (B.drop skipInFirstBlock) . B.pack
 
-        -- FIXME: response not parsed
-        deviceCall (ddCommand path onDeviceTempFile block) P.acceptAnything
+  blockToResult <$> deviceCall (ddCommand path Nothing block) P.parseDDReadFile
 
-        pullToTempFile onDeviceTempFile $ \localTempFile -> 
-            do
-              d <- liftIO $ B.readFile localTempFile
+  -- withRemoteTempFile $ \onDeviceTempFile ->
+  --     do
 
-              return $ B.take (fromIntegral count) $ B.drop skipInFirstBlock d
+  --       -- FIXME: response not parsed
+  --       deviceCall (ddCommand path onDeviceTempFile block) P.acceptAnything
+
+  --       pullToTempFile onDeviceTempFile $ \localTempFile -> 
+  --           do
+  --             d <- liftIO $ B.readFile localTempFile
+
+  --             return $ B.take (fromIntegral count) $ B.drop skipInFirstBlock d
 
 deviceWrite :: FilePath -> B.ByteString -> FileOffset -> DeviceCall ByteCount
 deviceWrite targetPath dataToWrite offset = do
@@ -553,7 +577,7 @@ deviceWrite targetPath dataToWrite offset = do
 
                  deviceCall ["push", localPath, remotePath] P.emptyResponse
 
-                 deviceCall (ddCommand remotePath targetPath block) $ P.acceptAnything
+                 deviceCall (ddCommand remotePath (Just targetPath) block) $ P.acceptAnything
 
   return $ fromIntegral dataSize
 

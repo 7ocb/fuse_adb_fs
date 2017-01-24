@@ -9,6 +9,7 @@ module Classes
      writeLog,
      CanFail,
      failWith,
+     withCleanup,
      Error(..))
 where
 
@@ -36,3 +37,4 @@ class (Monad m) => Logging m where
 
 class (Monad m) => CanFail m where
     failWith :: Error -> m a
+    withCleanup :: m a -> m () -> m a

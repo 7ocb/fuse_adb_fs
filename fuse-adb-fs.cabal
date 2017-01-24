@@ -114,6 +114,7 @@ Test-Suite fuse-adb-fs-tests
                     , unix
                     , HUnit
                     , fuse-adb-fs
+                    , filepath
 
   ghc-options:       -Wall -fno-warn-orphans -fno-warn-missing-signatures  
   default-language:    Haskell2010

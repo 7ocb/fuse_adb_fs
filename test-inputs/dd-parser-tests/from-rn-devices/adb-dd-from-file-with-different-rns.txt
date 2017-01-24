@@ -1,0 +1,15 @@
+
+akdlfj
+lkdfjlasdj
+asdlfkj
+there no \r
+adsf
+as
+again no \r
+df
+there only \rds and again only \rf
+sadf
+ds
+0+1 records in
+0+1 records out
+117 bytes transferred in 0.001 secs (117000 bytes/sec)

@@ -16,6 +16,11 @@ import Control.Monad.Reader
 
 import System.Posix.Types
 import System.Posix.Files
+import System.FilePath
+
+import System.IO ( openBinaryFile
+                 , hGetContents
+                 , IOMode( ReadMode ))
 
 import Utils hiding (blockify)
 import qualified Utils as U
@@ -62,7 +67,28 @@ testParseFileS fileName parser =
           assert (Left err) = assertFailure $ "parsing file " ++ fileName ++ ":\n" ++ show err
                               
       assert $ P.parse parser fileContents
-      
+
+testParsingDD :: Test
+testParsingDD = 
+    TestLabel "dd parsing" $ TestList [ testParsed "adb-dd-any-char.txt"
+                                      , testParsed "adb-dd-any-char-no-nl.txt"
+                                      , testParsed "adb-dd-from-file-with-different-rns.txt" ]
+
+    where testParsed file = 
+              TestLabel file $ TestList [testFor "from-n-devices",
+                                         testFor "from-rn-devices"]
+
+              where testFor folder = 
+                        TestLabel folder $ TestCase $ do
+                          toParse <- binaryRead (folder </> file)
+                          expected <- binaryRead ("expected" </> file)
+            
+                          let parsed = P.parse P.parseDDReadFile toParse
+
+                          assertEqual "parsed dd" ( Right $ expected ) parsed
+
+          binaryRead file = (openBinaryFile ("test-inputs" </> "dd-parser-tests" </> file) ReadMode) >>= hGetContents
+              
 main = runTestTT $ 
        TestList [ TestLabel "path qualification" $ 
                             TestList [assertPathQualification "/" FsRoot
@@ -140,4 +166,5 @@ main = runTestTT $
                                 , assert (Block 0 100 2 95) $ blockify 100 10 95 ])
 
                                             
-                , testEmptyDir ]
+                , testEmptyDir
+                , testParsingDD ]

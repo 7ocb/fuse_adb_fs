@@ -33,6 +33,13 @@ import Control.Monad.Except
 import Control.Exception (catch, IOException)  
 import System.Process as Proc
 import System.Exit
+import System.IO ( hClose
+                 , hSetBinaryMode
+                 , hSetBuffering
+                 , BufferMode(..)
+                 , hIsEOF
+                 , hGetChar
+                 , hGetContents )
 
 import Control.Monad.Writer
 
@@ -47,9 +54,37 @@ class Monad m => MonadAdb m where
 class Monad m => AdbFail m where
     adbFail :: String -> m a
 
+binaryReadProcess :: String -> [String] -> IO String
+binaryReadProcess name args = do
+  (readEnd, writeEnd) <- createPipe
+
+  (_, _, _, processHandle) <- createProcess $ (proc name args) {
+                                std_out = UseHandle writeEnd
+                              , std_err = UseHandle writeEnd
+                              }
+
+
+  hSetBinaryMode readEnd True
+
+  let readAll = do 
+        eof <- hIsEOF readEnd
+        if eof 
+        then return []
+        else do 
+          char <- hGetChar readEnd
+          (char :) <$> readAll
+
+  -- TODO: mixed error and output
+  allOutput <- readAll
+
+  -- TODO: unhandled error
+  waitForProcess processHandle
+
+  return allOutput
+
 callAdbIO :: (MonadIO m) => [String] -> m (Either String String)
 callAdbIO parameters = do 
-  liftIO $ ( Right <$> (readProcess "adb" parameters "") ) 
+  liftIO $ ( Right <$> (binaryReadProcess "adb" parameters) ) 
              `catch`
              ((return . Left . show) :: IOException -> IO (Either String String))
 
@@ -152,3 +187,6 @@ data Device = Device {
       device     :: Maybe String,
       deviceType :: DeviceType
     } deriving (Show, Eq)
+
+
+

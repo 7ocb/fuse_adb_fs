@@ -1,17 +1,18 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 module Parsers
-    (remoteLsLine,
-     Parser,
-     parse,
-     acceptAnything,
-     noSuchFile,
-     adbFsPath,
-     rfseFromAdbLs,
-     filePathFromRealpathResponse,
-     singleFileStat,
-     emptyResponse,
-     parseFileModeRWXFormat)
+    ( remoteLsLine
+    , Parser
+    , parse
+    , acceptAnything
+    , noSuchFile
+    , adbFsPath
+    , rfseFromAdbLs
+    , filePathFromRealpathResponse
+    , singleFileStat
+    , emptyResponse
+    , parseFileModeRWXFormat
+    , parseDDReadFile )
 where
 
 import Types
@@ -153,21 +154,21 @@ tillEndOfLine = anyChar `manyTill` newline
 
 
 permissionDeniedItem :: Parser RemoteFsEntry
-permissionDeniedItem = do 
+permissionDeniedItem = do
   anyChar `manyTill` char '\''
   name <- anyChar `manyTill` (try $ string "' failed: Permission denied")
-  newline 
+  newline
 
   return $ RemoteFsEntry nullFileMode 0 $ takeFileName name
 
 rfseFromAdbLs :: Parser [RemoteFsEntry]
-rfseFromAdbLs = do 
+rfseFromAdbLs = do
   optional $ try $ do
                   string "total "
                   many1 digit
-                  newline 
+                  newline
 
-  many $ ( try remoteLsLine 
+  many $ ( try remoteLsLine
            <|> permissionDeniedItem )
 
 emptyResponse :: Parser ()
@@ -176,7 +177,7 @@ emptyResponse = eof
 acceptAnything :: Parser ()
 acceptAnything = return ()
 
-noSuchFile :: Parser () 
+noSuchFile :: Parser ()
 noSuchFile = void $ anyChar `manyTill` (string ": No such file or directory")
 
 adbFsPath :: Parser PathQualification
@@ -209,3 +210,22 @@ singleFileStat :: Parser (Maybe RemoteFsEntry)
 singleFileStat = choice [Just <$> try remoteLsLine
                         , Just <$> try permissionDeniedItem
                         , noSuchFile >> return Nothing]
+
+parseDDReadFile :: Parser String
+parseDDReadFile = (try $ parseDDReadFileNl "\r\n")
+                  <|> (parseDDReadFileNl "\n")
+
+parseDDReadFileNl :: String -> Parser String
+parseDDReadFileNl newlineType = anyByte `manyTill` end
+    where records = number >> string "+" >> number >> string " records"
+          nl = try $ string newlineType
+          number = many1 digit
+          anyByte = choice [ nl >> return '\n'
+                           , anyChar ]
+          end = try $ do
+                  records >> string " in" >> nl
+                  records >> string " out" >> nl
+                  totally <- number
+                  string " bytes transferred in "
+                  anyChar `manyTill` ((nl >> eof) <|> eof)
+                  
