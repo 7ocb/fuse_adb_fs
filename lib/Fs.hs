@@ -157,6 +157,9 @@ data FsEntry = FsEntry { fseOpen             :: OpenMode -> OpenFileFlags -> Adb
                        , fseRemoveLink       :: AdbFsCall Errno
                        , fseRemoveDirectory  :: AdbFsCall Errno}
 
+data DeviceShellCall = DeviceShellCall [String]
+                       deriving (Show, Eq)
+
 log :: Logging m => String -> m ()
 log l = writeLog l
 
@@ -391,10 +394,6 @@ adbFsGetFileSystemStats str =
 
 data LsError = PermissionDenied String
 
-
-
-
-
 findDevice :: DeviceId -> AdbFsCall Device
 findDevice deviceId = do
   devicesResponse <- listDevices
@@ -405,20 +404,26 @@ findDevice deviceId = do
           Just device -> return device
           Nothing -> msgError eNOENT $ "No deivce: " ++ deviceId
 
-deviceShellCall :: (Logging m, WithCurrentDevice m) => [String] -> m (Either String String)
-deviceShellCall inArgs = do
+quoteAdbCallArgs :: [String] -> [String]
+quoteAdbCallArgs = map (foldr quote "")
+    where quote char acc 
+                | char `elem` quotable = '\\' : d
+                | otherwise = d
+                where d = char : acc
+          quotable = ['\'', '"', ' ']
+
+formatAdbShellCall :: [String] -> Char -> Char -> [String]
+formatAdbShellCall inArgs okMarker failMarker
+    = quoteAdbCallArgs $ "shell" : (["(", "("] ++ inArgs ++ [")", "&&", echo okMarker, ")", "||", echo failMarker]) 
+    where echo m = "echo -n " ++ [m]
+    
+deviceShellCall :: (Logging m, WithCurrentDevice m) => DeviceShellCall -> m (Either String String)
+deviceShellCall (DeviceShellCall inArgs) = do
   device <- currentDevice
 
-  let args = ["shell"] ++ (map quote $ ["(", "("] ++ inArgs ++ [")", "&&", echo ok, ")", "||", echo fail])
-      quote (c:xs) = if c `elem` quotable
-                     then '\\' : c : rest
-                     else c : rest
-          where rest = quote xs
-      quote [] = []
-      quotable = ['\'', '"']
-      echo m = "echo -n " ++ [m]
-      fail = 'f'
+  let args = formatAdbShellCall inArgs ok fail
       ok = 't'
+      fail = 'f'
 
   logLn $ "adb (" ++ (serialNo device) ++ " ) shell call: " ++ (show args)
 
@@ -440,25 +445,26 @@ parseWith parser string = case P.parse parser string of
                               simpleError eINVAL
                             Right result -> return result
 
+mapLeft :: (l -> nl) -> Either l r  -> Either nl r
+mapLeft f (Right value) = Right value
+mapLeft f (Left  error) = Left $ f error
+
+
+failOnLeft :: (CanFail m, Logging m) => Either String a -> m a
+failOnLeft (Right value) = return value
+failOnLeft (Left fail) = logLn fail >> simpleError eINVAL
+  
+
 deviceCall :: (CanFail m, Logging m, WithCurrentDevice m) => [String] -> Parser a -> m a
 deviceCall args parser = do
 
-  response <- callCurrentDevice args
+  response <- callCurrentDevice $ quoteAdbCallArgs args
   device <- currentDevice
 
   logLn $ "adb (" ++ (serialNo device) ++ " ) call: " ++ (show args)
   logLn $ "response: " ++ response
 
-  case P.parse parser response of
-    Left err -> do 
-      logLn $ "response can't be parsed: " ++ (show err)
-      simpleError eINVAL
-
-    Right contents -> return contents
-
-
-
-
+  failOnLeft $ mapLeft (("response can't be parsed:" ++ ) . show) $ P.parse parser response
 
 deviceLs :: String -> DeviceCall FilesList
 deviceLs path = (deviceCall ["shell", "ls", "-al", path ++ "/"] $ P.rfseFromAdbLs) >>= mapM statFromRemoteFsEntry 
