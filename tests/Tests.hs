@@ -157,6 +157,11 @@ main = runTestTT $
                                                                P.remoteLsLine
                                               , testParseFileS "test-inputs/device-stat/genymotion-5.0-random-line-00.txt"
                                                                P.remoteLsLine
+                                              , testParseFileR "test-inputs/device-stat/genymotion-7.0-no-such-file.txt"
+                                                               P.singleFileStat
+                                                               Nothing
+                                                                
+
                                               ] )
 
                 , TestLabel "blockfiy" $ TestList 

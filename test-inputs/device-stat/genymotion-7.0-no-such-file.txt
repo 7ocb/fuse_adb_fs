@@ -1,0 +1,1 @@
+ls: /storage/emulated/0/pew-pew: No such file or directory

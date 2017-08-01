@@ -178,7 +178,7 @@ acceptAnything :: Parser ()
 acceptAnything = return ()
 
 noSuchFile :: Parser ()
-noSuchFile = void $ anyChar `manyTill` (string ": No such file or directory")
+noSuchFile = void $ anyChar `manyTill` (try $ string ": No such file or directory")
 
 adbFsPath :: Parser PathQualification
 adbFsPath = do
