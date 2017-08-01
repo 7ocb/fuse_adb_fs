@@ -581,7 +581,7 @@ deviceWrite targetPath dataToWrite offset = do
       withRemoteTempFile $ \remotePath -> do
                  liftIO $ B.writeFile localPath transformedBlock
 
-                 deviceCall ["push", localPath, remotePath] P.emptyResponse
+                 deviceCall ["push", localPath, remotePath] P.acceptAnything
 
                  deviceCall (ddCommand remotePath (Just targetPath) block) $ P.acceptAnything
 

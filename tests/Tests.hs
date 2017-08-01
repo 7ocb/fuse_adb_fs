@@ -160,8 +160,6 @@ main = runTestTT $
                                               , testParseFileR "test-inputs/device-stat/genymotion-7.0-no-such-file.txt"
                                                                P.singleFileStat
                                                                Nothing
-                                                                
-
                                               ] )
 
                 , TestLabel "blockfiy" $ TestList 
