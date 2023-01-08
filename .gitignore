@@ -2,3 +2,5 @@
 cabal.sandbox.config
 dist
 rns.restored.txt
+.stack-work
+stack.yaml.lock
