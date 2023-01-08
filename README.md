@@ -1,3 +1,5 @@
+:warning: This is currently not supported.
+
 # fuse_adb_fs
 FUSE module for accessing Android devices over ADB
 
@@ -22,17 +24,15 @@ Features that hopefully will be added in future:
 
 Build:
 
-1. You'll need an [Haskell Platform](https://www.haskell.org/platform/) being installed.
+1. You'll need an [Haskell Tool Stack](https://docs.haskellstack.org/en/stable/) being installed.
 2. Clone fuse_adb_fs repo
 3. In the repo root, execute:
 
 ```
-cabal sandbox init
-cabal install --only-dependencies
-cabal build
+stack build
 ```
 
-The built executable will be placed in dist/build/fuse-adb-fs
+The built executable will be placed in `.stack-work/dist/x86_64-linux-tinfo6/Cabal-1.24.0.0/build/fuse-adb-fs/fuse-adb-fs`
 
 Usage:
 
